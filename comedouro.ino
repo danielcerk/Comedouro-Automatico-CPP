@@ -22,7 +22,7 @@ int cont = 0;
 int contA = 0;
 int contB = 0;
 int dose = 0;
-int intervalo = 0;
+int intervalo = 6000;
 int estadoMenu = 0;
 
 //Configura pinos do teclado numerico
@@ -80,11 +80,52 @@ void loop() {
 
       cont = 1;
 
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("SISTEMA ATIVO!");
-      lcd.setCursor(0, 1);
-      lcd.print("#) Reiniciar");
+      // -------------------------------------- MENU LIGAR SISTEMA SEM ANTES CONFIGURAR ---------------------------------------
+
+      if (cont == 1) {
+
+        if (dose == 0 || intervalo == 0) {
+
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Configure antes");
+            lcd.setCursor(0, 1);
+            lcd.print("de iniciar!");
+
+            delay(T0);
+
+            lcd.clear();
+
+            key = keypad.getKey();
+
+            cont = 0;
+
+        } else {
+
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("SISTEMA ATIVO!");
+            lcd.setCursor(0, 1);
+            lcd.print("#) Reiniciar");
+
+            int doses = dose;
+
+            while ( true ){
+
+                for (int i = 0; i < doses; i++) {
+                    
+                    motor();
+                    delay(3000);
+
+                }
+
+                delay(intervalo);
+
+            }
+
+        }
+
+      } 
 
     }
 
@@ -103,72 +144,6 @@ void loop() {
     }
 
     delay(T3);
-  }
-
-  // -------------------------------------- MENU LIGAR SISTEMA SEM ANTES CONFIGURAR ---------------------------------------
-
-  while (cont == 1) {
-
-    if (dose == 0 || intervalo == 0) {
-
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Configure antes");
-      lcd.setCursor(0, 1);
-      lcd.print("de iniciar!");
-
-      delay(T0);
-
-      lcd.clear();
-
-      key = keypad.getKey();
-
-      cont = 0;
-
-    }
-
-    else {
-
-      for (int x = 0; x < dose; x++) {
-        char key = keypad.getKey();
-        if (key == '#') {
-          Serial.println("Reiniciando...");
-          cont = 1;
-          return;
-        }
-
-        motor();
-        Serial.print("Dose numero: ");
-        Serial.println(x + 1);
-      }
-
-      if (intervalo == 6) {
-        unsigned long startTime = millis();
-        while (millis() - startTime < 6000) {
-          char key = keypad.getKey();
-          if (key == "#") {
-            Serial.println("Reiniciando...");
-            cont = 1;
-            return;
-          }
-        }
-      } else {
-        for (int y = 0; y < intervalo; y++) {
-          for (int z = 0; z < 60; z++) {
-            unsigned long startTime = millis();
-            while (millis() - startTime < 1000) {
-              char key = keypad.getKey();
-              if (key == "#") {
-                Serial.println("Reiniciando...");
-                cont = 1;
-                return;
-              }
-            }
-          }
-        }
-      }
-    }
-
   }
 
   // -------------------------------------- MENU "INFORME DOSE" - "INFORME TEMPO" ---------------------------------------
@@ -323,42 +298,42 @@ void loop() {
 
       if (key == '1') {
 
-        intervalo = 6;
+        intervalo = 6000;
         lcd.print("6 segundos.");
 
       }
 
       if (key == '2') {
 
-        intervalo = 1;
+        intervalo = 60000;
         lcd.print("1 minuto.");
 
       }
 
       if (key == '3') {
 
-        intervalo = 5;
+        intervalo = 300000;
         lcd.print("5 minutos.");
 
       }
 
       if (key == '4') {
 
-        intervalo = 10;
+        intervalo = 600000;
         lcd.print("10 minutos.");
 
       }
 
       if (key == '5') {
 
-        intervalo = 30;
+        intervalo = 1800000;
         lcd.print("30 minutos.");
 
       }
 
       if (key == '6') {
 
-        intervalo = 60;
+        intervalo = 3600000;
         lcd.print("60 minutos.");
 
       }
@@ -553,4 +528,3 @@ void passo_negativo() {
   rotate(-P, V);
 
 }
-
