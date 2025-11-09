@@ -4,6 +4,14 @@
 // Criar App para comunicação com o circuito
 // Criar funções Inicializar e Configurar em .h para importação
 
+// Acessa configurar
+// Configurar quantas doses diárias, se for 2, digite o 1 horário, digite o segundo, quantos ciclos
+
+// Consultar dados na memória para saber se os dados de configuração existem, se sim, iniciar
+// Inicializar, deverá executar o processo de dosagem, verificando minuto por minuto e acompanhado por um botão de sair
+// Deverá mostrar o horário da próxima dosagem
+// Ao fazer os ciclos, ele irá contar , por exemplo, falta 6 ciclos para completar a dosagem
+
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -32,6 +40,8 @@ const uint8_t X7 = 8;
 
 const byte row_size = 4;
 const byte col_size = 3;
+
+int state = 0;
 
 const uint8_t row_pin[4] = { X2, X7, X6, X4 };
 const uint8_t col_pin[3] = { X3, X1, X5 };
@@ -70,6 +80,8 @@ void setup() {
 
   }
 
+  Wire.begin();
+
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
 
     Serial.println("Falha ao inicializar display OLED.");
@@ -80,8 +92,8 @@ void setup() {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor((128 - 6 * strlen("Inicializando...")) / 2, 20);
-  display.println("Inicializando...");
+  display.setCursor((128 - 6 * strlen("Carregando...")) / 2, 20);
+  display.println("Carregando...");
   display.display();
   delay(1500);
 
@@ -108,49 +120,48 @@ void loop() {
     }
 
     else if (key == '#') {
+
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(SSD1306_WHITE);
+
+      // Ele não está conseguindo aceitar mais de um display
       
       if (menuOptions[selected] == "Inicializar"){
 
-        // Consultar banco de dados para saber se os dados de configuração existem, se sim, iniciar
-        // Inicializar, deverá executar o processo de dosagem, verificando minuto por minuto e acompanhado por um botão de sair
-        // Deverá mostrar o horário da próxima dosagem
-        // Ao fazer os ciclos, ele irá contar , por exemplo, falta 6 ciclos para completar a dosagem
+        /*display.setCursor((128 - 6 * strlen("Inicializando...")) / 2, 20);
+        display.print("Inicializando...");
+        display.display();
+        delay(1000);*/
 
-        display.clearDisplay();
-
-        Serial.print("Inicializar");
+        Serial.println("Inicializar");
 
       } else if (menuOptions[selected] == "Configurar") {
 
-        // Acessa configurar
-        // Configurar quantas doses diárias, se for 2, digite o 1 horário, digite o segundo, quantos ciclos
+        /*display.setCursor((128 - 6 * strlen("Modo Configuração")) / 2, 20);
+        display.print("Modo Configuração");
+        display.display();
+        delay(1000);*/
 
-        display.clearDisplay();
-
-        Serial.print("Configurar");
+        Serial.println("Configurar");
 
       } else if (menuOptions[selected] == "Reiniciar") {
 
-        display.clearDisplay();
-        display.setTextSize(1);
-        display.setTextColor(SSD1306_WHITE);
         display.setCursor((128 - 6 * strlen("Reiniciando...")) / 2, 20);
         display.print("Reiniciando...");
         display.display();
-        delay(1000);
-
-        // Resetar todos os dados da memória
 
         for (int nL = 0; nL < sizeEEPROM; nL++) {
 
-          EEPROM.write(nL, 0);
+          EEPROM.update(nL, 0);
+          if (nL % 50 == 0) delay(5);
 
         }
 
-        EEPROM.end();
+        delay(300);
+        void (*resetFunc)(void) = 0;
+        resetFunc();
 
-        // Reiniciar o Arduino
-        asm volatile("jmp 0");
       }
       
     }
