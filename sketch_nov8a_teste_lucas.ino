@@ -1,44 +1,22 @@
-// Configurar WIFI ( ESP01 )
-// Adicionar EEPROM
-// Configurar Relé
-
-
-// Inicialização
-
-// Ele deverá se a configuração existe, se não, apresenta mensagem de erro
-// Após isso ele deverá verificar minuto por minuto ...
-
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Keypad.h>
-#include <EEPROM.h>
 #include <ThreeWire.h>
 #include <RtcDS1302.h>
-
-#define P 490
-#define V 0.05
-#define T 100
-#define DIR_PIN 3
-#define STEP_PIN 2
-#define TIME 1000
+#include <EEPROM.h>
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
 #define DAT_PIN 11
 #define CLK_PIN 10
 #define RST_PIN 12
-
 ThreeWire myWire(DAT_PIN, CLK_PIN, RST_PIN);
 RtcDS1302<ThreeWire> Rtc(myWire);
 
-int ciclosDia = 0;
-int horarios[10];
-int cicloAtual = 0;
-bool inicializado = false;
-unsigned long ultimoCheck = 0;
-
+#define RELE 13
 
 const uint8_t X1 = 2;
 const uint8_t X2 = 3;
@@ -60,347 +38,334 @@ const char keys[4][3] = {
   {'7','8','9'},
   {'*','0','#'}
 };
-
 Keypad keypad = Keypad(makeKeymap(keys), row_pin, col_pin, row_size, col_size);
 
-int selected = 0;
-const int totalOptions = 3;
-int inAction = -1;
+int ciclosDia = 0;
+int horarios[10];
+int doses = 0;
+
+int menuIndex = 0;
+bool emAcao = false;
+int cicloAtual = 0;
+bool iniciado = false;
+unsigned long ultimoMinCheck = 0;
+
+void salvarEEPROM() {
+  EEPROM.update(0, ciclosDia);
+  EEPROM.update(1, doses);
+  int addr = 10;
+  for (int i = 0; i < ciclosDia; i++) {
+    EEPROM.put(addr, horarios[i]);
+    addr += sizeof(int);
+  }
+}
+
+void carregarEEPROM() {
+  ciclosDia = EEPROM.read(0);
+  doses = EEPROM.read(1);
+  int addr = 10;
+  for (int i = 0; i < ciclosDia; i++) {
+    EEPROM.get(addr, horarios[i]);
+    addr += sizeof(int);
+  }
+}
 
 void setup() {
+  pinMode(RELE, OUTPUT);
+  digitalWrite(RELE, LOW);
 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor((128 - 6 * strlen("Carregando...")) / 2, 20);
-  display.println("Carregando...");
+  display.setCursor(0,20);
+  display.println("Inicializando...");
   display.display();
 
   Rtc.Begin();
-
   if (!Rtc.GetIsRunning() || !Rtc.IsDateTimeValid()) {
     Rtc.SetIsRunning(true);
-    RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
-    Rtc.SetDateTime(compiled);
+    Rtc.SetDateTime(RtcDateTime(__DATE__, __TIME__));
   }
 
-
-  delay(1000);
+  carregarEEPROM();
+  delay(800);
 }
 
 void loop() {
+  if (!emAcao) menu();
+  else {
+    if (menuIndex == 0) inicializar();
+    if (menuIndex == 1) configurar();
+    if (menuIndex == 2) reiniciar();
+  }
+}
+
+void menu() {
+  RtcDateTime now = Rtc.GetDateTime();
+
+  int hh = now.Hour();
+  int mm = now.Minute();
+  int dd = now.Day();
+  int mo = now.Month();
+  int yy = now.Year();
 
   char key = keypad.getKey();
 
-  if (key) {
-
-    if (inAction == -1) {
-
-      if (key == '8') {
-
-        selected++;
-        if (selected >= totalOptions) selected = 0;
-
-      } else if (key == '2') {
-
-        selected--;
-        if (selected < 0) selected = totalOptions - 1;
-
-      } else if (key == '#') {
-
-        inAction = selected;
-
-      }
-
-    } else {
-
-      if (key == '*') {
-
-        inAction = -1;
-
-      }
-
-    }
-
+  if (key == '8') {
+    menuIndex++;
+    if (menuIndex > 2) menuIndex = 0;
   }
 
-  if (inAction == -1) {
-
-    drawMenu();
-
-  } else {
-
-    drawAction(inAction);
-
+  if (key == '2') {
+    menuIndex--;
+    if (menuIndex < 0) menuIndex = 2;
   }
 
-  delay(100);
-}
-
-void drawMenu() {
+  if (key == '#') emAcao = true;
 
   display.clearDisplay();
 
-  const char* options[totalOptions] = {"Inicializar", "Configurar", "Reiniciar"};
+  display.setCursor(0,0);
+  if (hh < 10) display.print("0");
+  display.print(hh);
+  display.print(":");
+  if (mm < 10) display.print("0");
+  display.print(mm);
+  display.print("  ");
+  if (dd < 10) display.print("0");
+  display.print(dd);
+  display.print("/");
+  if (mo < 10) display.print("0");
+  display.print(mo);
+  display.print("/");
+  display.print(yy);
 
-  RtcDateTime now = Rtc.GetDateTime();
-  printDateTime(now);
+  display.setCursor(0,16);
+  display.println("Menu:");
 
-  for (int i = 0; i < totalOptions; i++) {
-    int y = 16 + i * 12;
+  display.setCursor(0,32);
+  if (menuIndex == 0) display.print("> "); else display.print("  ");
+  display.println("Inicializar");
 
-    if (i == selected) {
-      display.setCursor(0, y);
-      display.print("> ");
-    } else {
-      display.setCursor(0, y);
-      display.print("  ");
-    }
+  display.setCursor(0,44);
+  if (menuIndex == 1) display.print("> "); else display.print("  ");
+  display.println("Configurar");
 
-    display.print(options[i]);
-  }
+  display.setCursor(0,56);
+  if (menuIndex == 2) display.print("> "); else display.print("  ");
+  display.println("Reiniciar");
 
   display.display();
 }
 
-
-void drawAction(int action) {
-
-  display.clearDisplay();
-  display.setCursor(0, 0);
-
-  switch (action) {
-
-    case 0:
-
-      inicializar();
-      break;
-
-    case 1:
-
-      configurar();
-      break;
-
-    case 2:
-
-      reiniciar();
-      break;
-
+bool deveSair() {
+  char k = keypad.getKey();
+  if (k == '*') {
+    emAcao = false;
+    iniciado = false;
+    digitalWrite(RELE, LOW);
+    return true;
   }
-
-  display.display();
-
+  return false;
 }
 
 void inicializar() {
+  if (deveSair()) return;
 
-  if (!inicializado) {
-
-    int valorExistente = EEPROM.read(0);
-
+  if (ciclosDia == 0 || doses == 0) {
     display.clearDisplay();
-    display.setCursor(0, 0);
-
-    if (valorExistente > 0 && valorExistente < 10) {
-
-      display.println("SISTEMA ATIVO");
-      ciclosDia = EEPROM.read(0);
-
-      for (int i = 0; i < ciclosDia; i++) {
-        int hora = EEPROM.read(1 + i * 2);
-        int minuto = EEPROM.read(1 + i * 2 + 1);
-        horarios[i] = hora * 100 + minuto;
-      }
-
-      cicloAtual = 0;
-      ultimoCheck = millis();
-      inicializado = true;
-
-    } else {
-
-      display.println("CONFIGURE ANTES DE INICIAR");
-      display.println("1 = Configurar");
-      display.println("* = Sair");
-
-      char k = keypad.getKey();
-      if (k == '1') inAction = 1;
-      else if (k == '*') inAction = -1;
-
-    }
-
+    display.setCursor(0,0);
+    display.println("Nao configurado");
+    display.setCursor(0,56);
+    display.println("* Voltar");
     display.display();
-
-  } else {
-
-    RtcDateTime now = Rtc.GetDateTime();
-    int agora = now.Hour() * 100 + now.Minute();
-
-    /*if (cicloAtual < ciclosDia && agora >= horarios[cicloAtual] && millis() - ultimoCheck >= 60000) {
-      motor();
-      cicloAtual++;
-      ultimoCheck = millis();
-    }*/
-
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.println("SISTEMA ATIVO");
-
-    /*if (cicloAtual < ciclosDia) {
-      int prox = horarios[cicloAtual];
-      int hh = prox / 100;
-      int mm = prox % 100;
-      display.print("Prox dosagem: ");
-      if (mm < 10) display.print(hh), display.print(":0"), display.println(mm);
-      else display.print(hh), display.print(":"), display.println(mm);
-      display.print("Faltam ");
-      display.println(ciclosDia - cicloAtual);
-      display.println(" ciclos");
-    } else {
-      display.println("Todos ciclos completos");
-    }*/
-
-    char k = keypad.getKey();
-    if (k == '*') {
-      inAction = -1;
-      inicializado = false;
-    }
-
-    display.display();
-
+    if (keypad.getKey() == '*') { emAcao = false; iniciado = false; }
+    return;
   }
 
+  if (!iniciado) {
+    iniciado = true;
+    cicloAtual = 0;
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Sistema ativo");
+    display.setCursor(0,56);
+    display.println("* Voltar");
+    display.display();
+    delay(500);
+    if (deveSair()) return;
+  }
+
+  if (millis() - ultimoMinCheck < 60000) {
+    if (deveSair()) return;
+    return;
+  }
+
+  ultimoMinCheck = millis();
+
+  if (cicloAtual >= ciclosDia) {
+    if (deveSair()) return;
+    return;
+  }
+
+  RtcDateTime now = Rtc.GetDateTime();
+
+  int agora = now.Hour()*100 + now.Minute();
+  int alvo = horarios[cicloAtual];
+
+  if (deveSair()) return;
+
+  display.clearDisplay();
+  display.setCursor(0,0);
+  display.println("Proximo ciclo:");
+
+  int hh = alvo / 100;
+  int mm = alvo % 100;
+
+  display.setCursor(0,16);
+  if (hh < 10) display.print("0");
+  display.print(hh);
+  display.print(":");
+  if (mm < 10) display.print("0");
+  display.print(mm);
+
+  display.setCursor(0,56);
+  display.println("* Voltar");
+  display.display();
+
+  if (agora >= alvo) {
+    executarDoses();
+    cicloAtual++;
+  }
 }
-  
 
 void configurar() {
-
-  int valorExistente = EEPROM.read(0);
-
-  if (valorExistente > 0 && valorExistente < 10) {
-
+  if (ciclosDia > 0 && doses > 0) {
     display.clearDisplay();
-    display.setCursor(0, 0);
-    display.println("Ja configurado");
-    display.println("Configurar novamente?");
-    display.println("1=Sim   *=Voltar");
+    display.setCursor(0,0);
+    display.println("Configurar?");
+    display.println("# Reconfigurar");
+    display.println("* Voltar");
     display.display();
-
     while (true) {
       char k = keypad.getKey();
-      if (!k) continue;
-      if (k == '1') break;
-      if (k == '*') { inAction = -1; return; }
+      if (k == '#') break;
+      if (k == '*') { emAcao = false; return; }
     }
   }
 
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("CONFIGURAR");
-  display.setCursor(0, 56);
-  display.println("* Voltar");
-  display.display();
-
-  int ciclosDia = -1;
-  int doses[5];
-  int ciclosHelice = -1;
-
-  ciclosDia = readNumberFromKeypad("Quantos ciclos/dia?");
-  if (ciclosDia == -1) { inAction = -1; return; }
-  EEPROM.write(0, ciclosDia);
+  ciclosDia = lerNumero("Ciclos por dia:");
+  if (ciclosDia <= 0) { emAcao = false; return; }
 
   for (int i = 0; i < ciclosDia; i++) {
-
-    char msg[20];
-    sprintf(msg, "Horario %d (HHMM):", i + 1);
-
-    int horario = readNumberFromKeypad(msg);
-    if (horario == -1) { inAction = -1; return; }
-
-    EEPROM.write(1 + i * 2,   horario / 100);
-    EEPROM.write(1 + i * 2 + 1, horario % 100);
-
-    doses[i] = horario;
+    while (true) {
+      char txt[20];
+      sprintf(txt, "Horario %d:", i + 1);
+      int h = lerNumero(txt);
+      if (i == 0) {
+        if (validarHorario(0, h)) { horarios[i] = h; break; }
+      } else {
+        if (validarHorario(horarios[i - 1], h)) { horarios[i] = h; break; }
+      }
+      display.clearDisplay();
+      display.setCursor(0,0);
+      display.println("Horario invalido");
+      display.println("* repetir");
+      display.display();
+      while (keypad.getKey() != '*');
+    }
   }
 
-  ciclosHelice = readNumberFromKeypad("Qtde de doses?");
-  if (ciclosHelice == -1) { inAction = -1; return; }
-  EEPROM.write(20, ciclosHelice);
+  doses = lerNumero("Doses:");
 
-  display.clearDisplay();
-  display.setCursor(0, 20);
-  display.println("Configurado!");
-  display.setCursor(0, 56);
-  display.println("* Voltar");
-  display.display();
+  salvarEEPROM();
 
-  delay(1500);
-  inAction = -1;
+  emAcao = false;
 }
 
-int readNumberFromKeypad(const char* mensagem) {
+bool validarHorario(int anterior, int atual) {
+  int hh = atual / 100;
+  int mm = atual % 100;
+  if (hh < 0 || hh > 23) return false;
+  if (mm < 0 || mm > 59) return false;
+  if (anterior <= 0) return true;
+  int ah = anterior / 100;
+  int am = anterior % 100;
+  if (hh > ah) return true;
+  if (hh == ah && mm > am) return true;
+  return false;
+}
 
+int lerNumero(const char* titulo) {
+  bool ehHorario = strstr(titulo, "Horario") != NULL;
   display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(mensagem);
-  display.println("Digite e pressione #");
-  display.setCursor(0, 56);
-  display.println("* Voltar");
+  display.setCursor(0,0);
+  display.println(titulo);
+  display.println("Digite e #");
   display.display();
-
-  char number[5] = "";
-  int length = 0;
-
+  char buff[6];
+  int len = 0;
   while (true) {
-
-    char key = keypad.getKey();
-    if (!key) continue;
-
-    if (key >= '0' && key <= '9') {
-      if (length < 4) {
-        number[length] = key;
-        length++;
-        number[length] = '\0';
-
+    char k = keypad.getKey();
+    if (k >= '0' && k <= '9') {
+      if (len < (ehHorario ? 4 : 5)) {
+        buff[len++] = k;
+        buff[len] = '\0';
         display.clearDisplay();
-        display.setCursor(0, 0);
-        display.println(mensagem);
-        display.println("Digite e pressione #");
-        display.setCursor(0, 24);
-
-        if (length <= 2) {
-          display.print(number);
-        } else {
-          display.print(number[0]);
-          display.print(number[1]);
-          display.print(":");
-          display.print(number[2]);
-          if (length == 4) display.print(number[3]);
-        }
-
-        display.setCursor(0, 56);
-        display.println("* Voltar");
+        display.setCursor(0,0);
+        display.println(titulo);
+        if (ehHorario) {
+          if (len == 1) {
+            display.print("0");
+            display.print(buff[0]);
+            display.print(":__");
+          } else if (len == 2) {
+            display.print(buff[0]);
+            display.print(buff[1]);
+            display.print(":__");
+          } else if (len == 3) {
+            display.print(buff[0]);
+            display.print(buff[1]);
+            display.print(":");
+            display.print("0");
+            display.print(buff[2]);
+          } else if (len == 4) {
+            display.print(buff[0]);
+            display.print(buff[1]);
+            display.print(":");
+            display.print(buff[2]);
+            display.print(buff[3]);
+          }
+        } else display.print(buff);
         display.display();
       }
     }
-
-    if (key == '#') {
-      if (length > 0) return atoi(number);
+    if (k == '#') {
+      if (len == 0) continue;
+      if (!ehHorario) return atoi(buff);
+      int value = 0;
+      if (len == 1) {
+        int h = buff[0] - '0';
+        value = h * 100;
+      } else if (len == 2) {
+        int h = (buff[0]-'0')*10 + (buff[1]-'0');
+        value = h * 100;
+      } else if (len == 3) {
+        int h = (buff[0]-'0')*10 + (buff[1]-'0');
+        int m = (buff[2]-'0');
+        value = h * 100 + m;
+      } else {
+        int h = (buff[0]-'0')*10 + (buff[1]-'0');
+        int m = (buff[2]-'0')*10 + (buff[3]-'0');
+        value = h * 100 + m;
+      }
+      return value;
     }
-
-    if (key == '*') {
-      return -1;
-    }
+    if (k == '*') return -1;
   }
 }
 
-
-
-
 void reiniciar() {
-
-  display.setCursor((128 - 6 * strlen("Reiniciando...")) / 2, 20);
-  display.print("Reiniciando...");
-  display.display();
 
   for (int i = 0; i < EEPROM.length(); i++) {
 
@@ -408,68 +373,42 @@ void reiniciar() {
 
   }
 
-  asm volatile ("jmp 0");
-
-}
-
-void printDateTime(const RtcDateTime& dt) {
-
-  char buffer[20];
-
-  snprintf_P(buffer, 
-    sizeof(buffer),
-    PSTR("%02u/%02u/%04u %02u:%02u"),
-    dt.Day(), dt.Month(), dt.Year(),
-    dt.Hour(), dt.Minute());
-
   display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  display.print(buffer);
+  display.setCursor(0,20);
+  display.println("Reiniciando...");
+  display.display();
+  delay(1000);
 
+  asm volatile ("jmp 0");
+  
 }
-
-void motor() {
-    passo_positivo();
-    delay(T);
-    passo_negativo();
-    delay(T);
-}
-
-void rotate(int steps, float speed) {
-    int dir = (steps > 0) ? HIGH : LOW;
-    steps = abs(steps);
-    digitalWrite(DIR_PIN, dir);
-    float usDelay = (1 / speed) * 70;
-
-    for (int i = 0; i < steps; i++) {
-        digitalWrite(STEP_PIN, HIGH);
-        delayMicroseconds(usDelay);
-        digitalWrite(STEP_PIN, LOW);
-        delayMicroseconds(usDelay);
+void executarDoses() {
+  for (int i = 0; i < doses; i++) {
+    if (deveSair()) return;
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.print("Fazendo dosagem:");
+    display.setCursor(0,16);
+    display.print(i + 1);
+    display.print("/");
+    display.print(doses);
+    display.setCursor(0,56);
+    display.println("* para sair");
+    display.display();
+    digitalWrite(RELE, HIGH);
+    for (int t = 0; t < 1000; t += 50) {
+      if (deveSair()) return;
+      delay(50);
     }
-}
-
-void rotateDeg(float deg, float speed) {
-    int dir = (deg > 0) ? HIGH : LOW;
-    digitalWrite(DIR_PIN, dir);
-    int steps = abs(deg) * (1 / 0.225);
-    float usDelay = (1 / speed) * 70;
-
-    for (int i = 0; i < steps; i++) {
-        digitalWrite(STEP_PIN, HIGH);
-        delayMicroseconds(usDelay);
-        digitalWrite(STEP_PIN, LOW);
-        delayMicroseconds(usDelay);
+    digitalWrite(RELE, LOW);
+    for (int t = 0; t < 800; t += 50) {
+      if (deveSair()) return;
+      delay(50);
     }
+  }
+  display.clearDisplay();
+  display.setCursor(0,0);
+  display.println("OK");
+  display.display();
+  delay(500);
 }
-
-void passo_positivo() {
-    rotate(P, V);
-}
-
-void passo_negativo() {
-    rotate(-P, V);
-}
-
