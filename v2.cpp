@@ -179,11 +179,30 @@ void inicializar() {
 }
 
 void configurar() {
+
+  if (ciclosDia > 0 && doses > 0) {
+
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Configurar?");
+    display.println("# Reconfigurar");
+    display.println("* Voltar");
+    display.display();
+
+    while (true) {
+      char k = keypad.getKey();
+      if (k == '#') break;
+      if (k == '*') {
+        emAcao = false;
+        return;
+      }
+    }
+  }
+
   ciclosDia = lerNumero("Ciclos por dia:");
   if (ciclosDia <= 0) { emAcao = false; return; }
 
   for (int i = 0; i < ciclosDia; i++) {
-
     while (true) {
       char txt[20];
       sprintf(txt, "Horario %d:", i + 1);
@@ -191,13 +210,15 @@ void configurar() {
       int h = lerNumero(txt);
 
       if (i == 0) {
-        horarios[i] = h;
-        break;
-      }
-
-      if (validarHorario(horarios[i - 1], h)) {
-        horarios[i] = h;
-        break;
+        if (validarHorario(0, h)) {
+          horarios[i] = h;
+          break;
+        }
+      } else {
+        if (validarHorario(horarios[i - 1], h)) {
+          horarios[i] = h;
+          break;
+        }
       }
 
       display.clearDisplay();
@@ -212,59 +233,58 @@ void configurar() {
 
   doses = lerNumero("Doses:");
   emAcao = false;
-
 }
 
-bool validarHorario(int anterior, int atual) {
 
-  return atual > anterior;
-  
+bool validarHorario(int anterior, int atual) {
+  int hh = atual / 100;
+  int mm = atual % 100;
+  if (hh < 0 || hh > 23) return false;
+  if (mm < 0 || mm > 59) return false;
+  if (anterior <= 0) return true;
+  int ah = anterior / 100;
+  int am = anterior % 100;
+  if (ah < 0 || ah > 23) return false;
+  if (am < 0 || am > 59) return false;
+  if (hh > ah) return true;
+  if (hh == ah && mm > am) return true;
+  return false;
 }
 
 int lerNumero(const char* titulo) {
   bool ehHorario = strstr(titulo, "Horario") != NULL;
-
   display.clearDisplay();
   display.setCursor(0,0);
   display.println(titulo);
   display.println("Digite e #");
   display.display();
-
   char buff[6];
   int len = 0;
-
   while (true) {
     char k = keypad.getKey();
-
     if (k >= '0' && k <= '9') {
       if (len < (ehHorario ? 4 : 5)) {
         buff[len++] = k;
         buff[len] = '\0';
-
         display.clearDisplay();
         display.setCursor(0,0);
         display.println(titulo);
-
         if (ehHorario) {
-          if (len == 0) display.print("__:__");
           if (len == 1) {
             display.print("0");
             display.print(buff[0]);
             display.print(":__");
-          }
-          if (len == 2) {
+          } else if (len == 2) {
             display.print(buff[0]);
             display.print(buff[1]);
             display.print(":__");
-          }
-          if (len == 3) {
+          } else if (len == 3) {
             display.print(buff[0]);
             display.print(buff[1]);
             display.print(":");
             display.print("0");
             display.print(buff[2]);
-          }
-          if (len == 4) {
+          } else if (len == 4) {
             display.print(buff[0]);
             display.print(buff[1]);
             display.print(":");
@@ -274,18 +294,34 @@ int lerNumero(const char* titulo) {
         } else {
           display.print(buff);
         }
-
         display.display();
       }
     }
-
     if (k == '#') {
-      if (len > 0) return atoi(buff);
+      if (len == 0) continue;
+      if (!ehHorario) return atoi(buff);
+      int value = 0;
+      if (len == 1) {
+        int h = buff[0] - '0';
+        value = h * 100;
+      } else if (len == 2) {
+        int h = (buff[0]-'0')*10 + (buff[1]-'0');
+        value = h * 100;
+      } else if (len == 3) {
+        int h = (buff[0]-'0')*10 + (buff[1]-'0');
+        int m = (buff[2]-'0');
+        value = h * 100 + m;
+      } else { // len == 4
+        int h = (buff[0]-'0')*10 + (buff[1]-'0');
+        int m = (buff[2]-'0')*10 + (buff[3]-'0');
+        value = h * 100 + m;
+      }
+      return value;
     }
-
     if (k == '*') return -1;
   }
 }
+
 
 
 void reiniciar() {
